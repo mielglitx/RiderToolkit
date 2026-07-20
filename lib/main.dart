@@ -123,7 +123,7 @@ class AutoUpdateService {
 }
 
 // ==========================================
-// SCREEN 0: SECURE RIDER LOGIN
+// SCREEN 0: SECURE OFFLINE LOGIN
 // ==========================================
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -134,56 +134,50 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _idController = TextEditingController();
-  bool _isLoggingIn = false;
+  
+  // 1. HARDCODED LIST: This list stays inside the app.
+  // It is not displayed on the UI, keeping it hidden from casual viewing.
+  final Map<String, String> _authorizedRiders = {
+    "8970234870": "Ruth",
+    "8633253437": "Rex",
+    "6073157217": "Gino Arlo",
+    "8335759801": "Noli",
+    "6402394358": "Ric",
+    "8281104099": "ron",
+    "7001907975": "Hero",
+    "6313040600": "Amiel",
+    "7643629650": "Mark",
+    "7100188798": "Joal",
+  };
 
-  Future<void> _loginDevice() async {
-    if (_idController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ Paki-lagay ang iyong Telegram ID.")));
-      return;
+  void _processLogin() async {
+    String inputId = _idController.text.trim();
+
+    // 2. CHECK: Does the ID exist in our secure map?
+    if (_authorizedRiders.containsKey(inputId)) {
+      String riderName = _authorizedRiders[inputId]!;
+      
+      // Save locally
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString('riderName', riderName);
+      await prefs.setString('telegramId', inputId);
+
+      AppProfile.riderName = riderName;
+      AppProfile.telegramId = inputId;
+
+      if (!mounted) return;
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SmartCartScreen()));
+    } else {
+      // 3. REJECT: ID not found
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Access Denied"),
+          content: const Text("Ang ID na ito ay hindi rehistrado sa system."),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
+        ),
+      );
     }
-
-    setState(() => _isLoggingIn = true);
-
-    try {
-      final response = await http.post(
-        Uri.parse("http://192.168.1.43:5000/api/auth/login"), 
-  headers: {"Content-Type": "application/json"},
-  body: jsonEncode({"telegram_id": _idController.text.trim()}),
-);
-
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data['success'] == true) {
-        String fetchedName = data['rider_name'];
-
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString('riderName', fetchedName);
-        await prefs.setString('telegramId', _idController.text.trim());
-
-        AppProfile.riderName = fetchedName;
-        AppProfile.telegramId = _idController.text.trim();
-
-        if (!mounted) return;
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SmartCartScreen()));
-      } else {
-        _showError(data['error'] ?? "Failed to login. Please check your ID.");
-      }
-    } catch (e) {
-      _showError("Hindi makakonekta sa server. Please check your internet connection.");
-    } finally {
-      if (mounted) setState(() => _isLoggingIn = false);
-    }
-  }
-
-  void _showError(String msg) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Login Failed", style: TextStyle(color: Colors.redAccent)),
-        content: Text(msg),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
-      ),
-    );
   }
 
   @override
@@ -196,24 +190,23 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text("Welcome to Lokalex!", textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-            const SizedBox(height: 10),
-            const Text("Paki-lagay ang iyong authorized Telegram User ID upang makapag-login sa system.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+            const Text("Lokalex System Access", textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 40),
             TextField(
               controller: _idController,
               keyboardType: TextInputType.number,
-              enabled: !_isLoggingIn,
-              decoration: const InputDecoration(labelText: "Telegram User ID", prefixIcon: Icon(Icons.numbers), border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: "Enter Authorized ID", 
+                prefixIcon: Icon(Icons.key), 
+                border: OutlineInputBorder()
+              ),
             ),
             const SizedBox(height: 30),
-            _isLoggingIn 
-              ? const Center(child: CircularProgressIndicator())
-              : ElevatedButton(
-                  onPressed: _loginDevice,
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green, fixedSize: const Size.fromHeight(50)),
-                  child: const Text("Secure Login", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                )
+            ElevatedButton(
+              onPressed: _processLogin,
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, fixedSize: const Size.fromHeight(50)),
+              child: const Text("LOGIN", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            )
           ],
         ),
       ),
