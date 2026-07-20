@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ==========================================
 // GLOBALS: RIDER PROFILE MEMORY
@@ -38,6 +40,84 @@ class LokalexRiderApp extends StatelessWidget {
         cardColor: const Color(0xFF1E1E1E),
       ),
       home: AppProfile.telegramId.isEmpty ? const LoginScreen() : const SmartCartScreen(),
+    );
+  }
+}
+
+// ==========================================
+// AUTO-UPDATE SERVICE (Browser Redirect)
+// ==========================================
+class AutoUpdateService {
+  static const String updateCheckUrl = "https://lokalexdeliver.com/api/app/check_update";
+
+  static Future<void> checkForUpdates(BuildContext context) async {
+    try {
+      PackageInfo packageInfo = await PackageInfo.fromPlatform();
+      String currentVersion = packageInfo.version;
+
+      final response = await http.get(Uri.parse(updateCheckUrl));
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body);
+      String latestVersion = data['latest_version'];
+      String apkUrl = data['apk_url'];
+      String changelog = data['changelog'] ?? "Performance updates and bug fixes.";
+
+      if (_isVersionNewer(currentVersion, latestVersion)) {
+        if (!context.mounted) return;
+        _showUpdateDialog(context, latestVersion, apkUrl, changelog);
+      }
+    } catch (e) {
+      debugPrint("Auto-update check failed: $e");
+    }
+  }
+
+  static bool _isVersionNewer(String current, String latest) {
+    List<int> currParts = current.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+    List<int> lateParts = latest.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+
+    for (int i = 0; i < lateParts.length; i++) {
+      int curr = i < currParts.length ? currParts[i] : 0;
+      if (lateParts[i] > curr) return true;
+      if (lateParts[i] < curr) return false;
+    }
+    return false;
+  }
+
+  static void _showUpdateDialog(BuildContext context, String version, String apkUrl, String changelog) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text("🚀 Bagong Update Available ($version)"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(changelog, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+              const SizedBox(height: 16),
+              const Text("Ang update na ito ay idodownload gamit ang iyong browser.", style: TextStyle(fontSize: 12, color: Colors.blueAccent)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text("Later", style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: () async {
+                Uri updateUri = Uri.parse(apkUrl);
+                if (await canLaunchUrl(updateUri)) {
+                  await launchUrl(updateUri, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: const Text("Download Update", style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -84,8 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
         AppProfile.telegramId = _idController.text.trim();
 
         if (!mounted) return;
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SmartCartScreen()),
-        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const SmartCartScreen()));
       } else {
         _showError(data['error'] ?? "Failed to login. Please check your ID.");
       }
@@ -169,24 +248,48 @@ class SmartCartScreen extends StatefulWidget {
 class _SmartCartScreenState extends State<SmartCartScreen> {
   final List<CartItem> _notepad = [];
   final Set<String> _selectedItems = {}; 
-  
-  final TextEditingController _itemNameController = TextEditingController();
-  final TextEditingController _itemPriceController = TextEditingController();
+  final TextEditingController _bulkItemController = TextEditingController();
 
-  void _addItem() {
-    if (_itemNameController.text.trim().isEmpty) return;
-    double price = double.tryParse(_itemPriceController.text) ?? 0.0;
-    
-    setState(() {
-      _notepad.add(CartItem(item: _itemNameController.text.trim(), price: price, category: null));
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AutoUpdateService.checkForUpdates(context);
     });
-    
-    _itemNameController.clear();
-    _itemPriceController.clear();
+  }
+
+  void _addBulkItems() {
+    if (_bulkItemController.text.trim().isEmpty) return;
+
+    List<String> lines = _bulkItemController.text.trim().split('\n');
+
+    setState(() {
+      for (String line in lines) {
+        line = line.trim();
+        if (line.isEmpty) continue;
+
+        int lastSpaceIndex = line.lastIndexOf(' ');
+        double price = 0.0;
+        String itemName = line;
+
+        if (lastSpaceIndex != -1) {
+          String possiblePrice = line.substring(lastSpaceIndex + 1);
+          double? parsedPrice = double.tryParse(possiblePrice);
+          
+          if (parsedPrice != null) {
+            price = parsedPrice;
+            itemName = line.substring(0, lastSpaceIndex).trim();
+          }
+        }
+
+        _notepad.add(CartItem(item: itemName, price: price, category: null));
+      }
+    });
+
+    _bulkItemController.clear();
     Navigator.pop(context);
   }
 
-  // Interactive Slide-to-Delete confirmation layout sheet
   Future<bool> _showSlideToDeleteSheet(String titleMessage) async {
     double sliderValue = 0.0;
     bool confirmDelete = false;
@@ -253,7 +356,7 @@ class _SmartCartScreenState extends State<SmartCartScreen> {
                                   Navigator.pop(context);
                                 } else {
                                   setSheetState(() {
-                                    sliderValue = 0.0; // Bounce back if not fully slid to the right
+                                    sliderValue = 0.0;
                                   });
                                 }
                               },
@@ -298,21 +401,29 @@ class _SmartCartScreenState extends State<SmartCartScreen> {
     }
   }
 
-  void _showAddItemDialog() {
+  void _showBulkAddDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("➕ Magdagdag ng Item"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: _itemNameController, decoration: const InputDecoration(labelText: "Pangalan ng Item o Pabili"), textCapitalization: TextCapitalization.sentences),
-            TextField(controller: _itemPriceController, decoration: const InputDecoration(labelText: "Presyo (Iwanang 0 kung task)"), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-          ],
+        title: const Text("📝 Magdagdag ng Listahan"),
+        content: TextField(
+          controller: _bulkItemController,
+          maxLines: 6,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: "I-paste ang listahan dito",
+            hintText: "Format: Pangalan Presyo\nHalimbawa:\n1pc chicken 150\nSibuyas\nBigas 60",
+            border: OutlineInputBorder(),
+            alignLabelWithHint: true,
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          ElevatedButton(onPressed: _addItem, child: const Text("Add")),
+          ElevatedButton(
+            onPressed: _addBulkItems, 
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+            child: const Text("Add List", style: TextStyle(color: Colors.white)),
+          ),
         ],
       ),
     );
@@ -422,7 +533,7 @@ class _SmartCartScreenState extends State<SmartCartScreen> {
           ),
           Expanded(
             child: _notepad.isEmpty
-                ? const Center(child: Text("Walang laman ang cart. Magdagdag gamit ang + button.", style: TextStyle(color: Colors.grey)))
+                ? const Center(child: Text("Walang laman ang cart. Magdagdag gamit ang Add List button.", style: TextStyle(color: Colors.grey)))
                 : ListView.builder(
                     itemCount: _notepad.length,
                     itemBuilder: (context, index) {
@@ -511,10 +622,10 @@ class _SmartCartScreenState extends State<SmartCartScreen> {
                   Expanded(
                     flex: 2,
                     child: ElevatedButton.icon(
-                      onPressed: _showAddItemDialog,
+                      onPressed: _showBulkAddDialog,
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, fixedSize: const Size.fromHeight(50)),
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      label: const Text("Add Item", style: TextStyle(color: Colors.white)),
+                      icon: const Icon(Icons.list_alt, color: Colors.white),
+                      label: const Text("Add List", style: TextStyle(color: Colors.white)),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -758,7 +869,7 @@ class _FeeWizardScreenState extends State<FeeWizardScreen> {
     bool isDisabled = isFreeDeliveryBypass && title != "Discount Bawas";
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: isDisabled ? Colors.black : null,
+      color: isDisabled ? Colors.black26 : null,
       child: ListTile(
         title: Text(title, style: TextStyle(fontSize: 14, color: isDisabled ? Colors.grey : Colors.white70)),
         trailing: Row(
@@ -814,6 +925,8 @@ class FinalReceiptScreen extends StatefulWidget {
   @override
   State<FinalReceiptScreen> createState() => _FinalReceiptScreenState();
 }
+
+ declineReceipt() {}
 
 class _FinalReceiptScreenState extends State<FinalReceiptScreen> {
   late String riderIdCode;
