@@ -146,10 +146,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse("https://lokalexdeliver.com/api/auth/login"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"telegram_id": _idController.text.trim()}),
-      );
+        Uri.parse("http://192.168.1.43:5000/api/auth/login"), 
+  headers: {"Content-Type": "application/json"},
+  body: jsonEncode({"telegram_id": _idController.text.trim()}),
+);
 
       final data = jsonDecode(response.body);
 
