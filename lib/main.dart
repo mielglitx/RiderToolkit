@@ -134,9 +134,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _idController = TextEditingController();
-  
-  // 1. HARDCODED LIST: This list stays inside the app.
-  // It is not displayed on the UI, keeping it hidden from casual viewing.
+
+  // 1. HARDCODED LIST: Checking this map replaces the server request
   final Map<String, String> _authorizedRiders = {
     "8970234870": "Ruth",
     "8633253437": "Rex",
@@ -153,7 +152,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _processLogin() async {
     String inputId = _idController.text.trim();
 
-    // 2. CHECK: Does the ID exist in our secure map?
+    // 2. LOGIC: Check the map instead of the server
     if (_authorizedRiders.containsKey(inputId)) {
       String riderName = _authorizedRiders[inputId]!;
       
@@ -172,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text("Access Denied"),
+          title: const Text("Access Denied", style: TextStyle(color: Colors.redAccent)),
           content: const Text("Ang ID na ito ay hindi rehistrado sa system."),
           actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
         ),
